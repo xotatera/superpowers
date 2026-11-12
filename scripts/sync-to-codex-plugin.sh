@@ -44,6 +44,7 @@ DEST_REL="plugins/superpowers"
 # (.DS_Store is intentionally unanchored — Finder creates them everywhere.)
 EXCLUDES=(
   # Dotfiles and infra — top-level only
+  "/.antigravity-plugin/"
   "/.claude/"
   "/.claude-plugin/"
   "/.codex/"
@@ -80,6 +81,9 @@ EXCLUDES=(
   "/scripts/"
   "/tests/"
   "/tmp/"
+
+  # Other harnesses' assets
+  "/assets/antigravity-logo.png"
 )
 
 # =============================================================================
@@ -175,7 +179,7 @@ command -v python3 >/dev/null || die "python3 not found in PATH"
 
 gh auth status >/dev/null 2>&1 || die "gh not authenticated — run 'gh auth login'"
 
-[[ -d "$UPSTREAM/.git" ]]         || die "upstream '$UPSTREAM' is not a git checkout"
+[[ -e "$UPSTREAM/.git" ]]         || die "upstream '$UPSTREAM' is not a git checkout"
 [[ -f "$UPSTREAM/.codex-plugin/plugin.json" ]] || die "committed Codex manifest missing at $UPSTREAM/.codex-plugin/plugin.json"
 
 # Read the upstream version from the committed Codex manifest.
@@ -219,7 +223,7 @@ trap cleanup EXIT
 
 if [[ -n "$LOCAL_CHECKOUT" ]]; then
   DEST_REPO="$(cd "$LOCAL_CHECKOUT" && pwd)"
-  [[ -d "$DEST_REPO/.git" ]] || die "--local path '$DEST_REPO' is not a git checkout"
+  [[ -e "$DEST_REPO/.git" ]] || die "--local path '$DEST_REPO' is not a git checkout"
 else
   echo "Cloning $FORK..."
   CLEANUP_DIR="$(mktemp -d)"
