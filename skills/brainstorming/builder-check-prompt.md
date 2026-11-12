@@ -4,6 +4,7 @@ Dispatch a fresh general-purpose subagent with this prompt once the
 written design exists. Fill in the domain and the document path.
 
 ```
+<!-- superpowers-kind: builder-check -->
 You are a talented [DOMAIN, e.g. "software engineer", "event planner",
 "bakery consultant"]. You've been handed a design document and asked to
 put together a plan to build what it describes. You will not be able to
