@@ -404,6 +404,40 @@ else
     echo "  [SKIP] child-process count: needs Linux strace"
 fi
 
+# A fake plugin root whose SKILL.md content or file type the test controls.
+make_fake_root() {
+    local root="$TEST_ROOT/$1"
+    mkdir -p "$root/hooks" "$root/skills/using-superpowers"
+    cp "$HOOK_UNDER_TEST" "$root/hooks/session-start"
+    printf '%s\n' "$root"
+}
+
+echo "Test: control characters in SKILL.md still give valid JSON"
+ctrl_root="$(make_fake_root ctrl)"
+printf 'start\001\b\f\033end\n' > "$ctrl_root/skills/using-superpowers/SKILL.md"
+if env -i PATH="${PATH:-}" HOME="$TEST_ROOT" CLAUDE_PLUGIN_ROOT="$ctrl_root" \
+    bash "$ctrl_root/hooks/session-start" | node -e '
+const p = JSON.parse(require("fs").readFileSync(0, "utf8"));
+const ctx = p.hookSpecificOutput.additionalContext;
+if (!ctx.includes("start\u0001\b\f\u001bend")) process.exit(1);
+' 2>/dev/null; then
+    pass "SKILL.md with \\001, \\b, \\f and ESC round-trips through valid JSON"
+else
+    fail "SKILL.md with \\001, \\b, \\f and ESC round-trips through valid JSON"
+fi
+
+echo "Test: a SKILL.md that is not a regular file does not hang the hook"
+fifo_root="$(make_fake_root fifo)"
+mkfifo "$fifo_root/skills/using-superpowers/SKILL.md"
+fifo_status=0
+fifo_output="$(env -i PATH="${PATH:-}" HOME="$TEST_ROOT" CLAUDE_PLUGIN_ROOT="$fifo_root" \
+    timeout 5 bash "$fifo_root/hooks/session-start" 2>/dev/null)" || fifo_status=$?
+if [[ "$fifo_status" -eq 0 ]] && printf '%s' "$fifo_output" | grep -q "Error reading using-superpowers skill"; then
+    pass "a named pipe in place of SKILL.md gives the error text instead of blocking"
+else
+    fail "a named pipe in place of SKILL.md gives the error text instead of blocking (exit $fifo_status)"
+fi
+
 if [[ "$FAILURES" -gt 0 ]]; then
     echo "STATUS: FAILED ($FAILURES failure(s))"
     exit 1

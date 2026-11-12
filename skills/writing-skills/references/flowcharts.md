@@ -34,4 +34,6 @@ See `graphviz-conventions.dot` in this directory for graphviz style rules.
 ```bash
 node ./render-graphs.js ../some-skill           # Each diagram separately
 node ./render-graphs.js ../some-skill --combine # All diagrams in one SVG
+node ./render-graphs.js ../some-skill --out DIR # Write into DIR
 ```
+Without `--out` the SVGs go to a fresh temporary directory, whose path is printed; nothing is written into the skill's own directory.

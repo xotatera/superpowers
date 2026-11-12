@@ -106,7 +106,9 @@ if [[ -f "$PID_FILE" ]]; then
     exit 1
   fi
 
-  rm -f "$PID_FILE" "$SERVER_ID_FILE" "${STATE_DIR}/server.log"
+  # server.log stays: a persistent session directory is kept for review, and
+  # an ephemeral /tmp one is removed whole below.
+  rm -f "$PID_FILE" "$SERVER_ID_FILE"
   mark_stopped "stop-server.sh"
 
   # Only delete ephemeral /tmp directories

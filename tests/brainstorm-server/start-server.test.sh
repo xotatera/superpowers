@@ -173,10 +173,10 @@ else
   fail "default session dir is created under /tmp/brainstorm-*" "got: $captured"
 fi
 
-if [[ -n "$tmp_session_dir" && ! "$tmp_session_dir" =~ ^/tmp/brainstorm-[0-9]+-[0-9]+$ ]]; then
-  pass "default session dir name is not <pid>-<epoch>"
+if [[ "$tmp_session_dir" =~ ^/tmp/brainstorm-[A-Za-z0-9]{10}$ && ! "$tmp_session_dir" =~ ^/tmp/brainstorm-[0-9]+-[0-9]+$ ]]; then
+  pass "default session dir name ends in 10 random characters, not <pid>-<epoch>"
 else
-  fail "default session dir name is not <pid>-<epoch>" "got: '$tmp_session_dir'"
+  fail "default session dir name ends in 10 random characters, not <pid>-<epoch>" "got: '$tmp_session_dir'"
 fi
 
 if [[ -n "$tmp_session_dir" && "$(stat -c %a "$tmp_session_dir" 2>/dev/null)" == "700" ]]; then

@@ -58,6 +58,12 @@ fi
 # ``` line) leaves the brief complete, so brief it with a warning.
 # The plan path goes through ENVIRON, not -v, which would mangle the
 # backslashes of a Windows path.
+# Extract into a temporary file beside OUTFILE and move it into place only on
+# success, so a failed run leaves an existing OUTFILE as it was.
+tmp=$(mktemp "${out}.XXXXXX")
+trap 'rm -f "$tmp"' EXIT
+# mktemp makes the file 0600; give the brief the mode a plain redirect would.
+chmod "$(printf '%o' $(( 0666 & ~0$(umask) )))" "$tmp"
 rc=0
 TASK_BRIEF_PLAN="$plan" awk -v n="$n" '
   /^```/ { infence = !infence; if (infence) { fence_line = NR; hidden = 0 } }
@@ -94,15 +100,15 @@ TASK_BRIEF_PLAN="$plan" awk -v n="$n" '
       for (i = 1; i <= shaped; i++) print "  " shaped_heading[i] | "cat >&2"
     }
   }
-' "$plan" > "$out" || rc=$?
+' "$plan" > "$tmp" || rc=$?
 if [ "$rc" -ne 0 ]; then
-  if [ -f "$out" ]; then rm -f "$out"; fi
   exit "$rc"
 fi
 
-if [ ! -s "$out" ]; then
+if [ ! -s "$tmp" ]; then
   echo "task ${n} not found in ${plan} (no heading matching 'Task ${n}')" >&2
   exit 3
 fi
+mv -f "$tmp" "$out"
 
 echo "wrote ${out}: $(wc -l < "$out" | tr -d ' ') lines"

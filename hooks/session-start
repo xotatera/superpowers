@@ -24,7 +24,8 @@ PLUGIN_ROOT="${SCRIPT_DIR}/.."
 # of file, hence || true; the loop drops trailing newlines as $(< file) did.
 skill_md="${PLUGIN_ROOT}/skills/using-superpowers/SKILL.md"
 using_superpowers_content="Error reading using-superpowers skill"
-if [ -r "$skill_md" ]; then
+# -f as well as -r: a named pipe or device here would block the read below.
+if [ -f "$skill_md" ] && [ -r "$skill_md" ]; then
   IFS= read -r -d '' using_superpowers_content < "$skill_md" || true
   while [[ $using_superpowers_content == *$'\n' ]]; do
     using_superpowers_content="${using_superpowers_content%$'\n'}"
@@ -42,6 +43,14 @@ escape_for_json() {
     s="${s//$'\n'/\\n}"
     s="${s//$'\r'/\\r}"
     s="${s//$'\t'/\\t}"
+    # Every other control character as \u00XX, which JSON requires. eval and
+    # $'\xHH' are builtins in both bash and zsh (the zsh fallback in
+    # run-hook.cmd), so this still forks nothing.
+    local hex c
+    for hex in 01 02 03 04 05 06 07 08 0b 0c 0e 0f 10 11 12 13 14 15 16 17 18 19 1a 1b 1c 1d 1e 1f; do
+        eval "c=\$'\\x$hex'"
+        s="${s//"$c"/\\u00$hex}"
+    done
     using_superpowers_escaped="$s"
 }
 

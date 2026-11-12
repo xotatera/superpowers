@@ -399,6 +399,58 @@ function runTests() {
     assert.deepStrictEqual(decoded, msg);
   });
 
+  // ========== Fragmented messages ==========
+  console.log('\n--- Fragmented messages ---');
+
+  test('decodeFrame reports the FIN bit', () => {
+    assert.strictEqual(ws.decodeFrame(makeClientFrame(0x01, 'a', true)).fin, true);
+    assert.strictEqual(ws.decodeFrame(makeClientFrame(0x01, 'a', false)).fin, false);
+  });
+
+  test('a text message split over continuation frames is reassembled', () => {
+    const asm = ws.createMessageAssembler();
+    assert.strictEqual(asm.push(ws.decodeFrame(makeClientFrame(0x01, '{"type":', false))), null);
+    assert.strictEqual(asm.push(ws.decodeFrame(makeClientFrame(0x00, '"click",', false))), null);
+    assert.strictEqual(asm.push(ws.decodeFrame(makeClientFrame(0x00, '"choice":"a"}', true))), '{"type":"click","choice":"a"}');
+  });
+
+  test('an unfragmented text frame is returned whole', () => {
+    const asm = ws.createMessageAssembler();
+    assert.strictEqual(asm.push(ws.decodeFrame(makeClientFrame(0x01, 'hello', true))), 'hello');
+  });
+
+  test('a continuation frame without a started message is a protocol error', () => {
+    const asm = ws.createMessageAssembler();
+    assert.throws(() => asm.push(ws.decodeFrame(makeClientFrame(0x00, 'x', true))));
+  });
+
+  test('a new text frame while a message is unfinished is a protocol error', () => {
+    const asm = ws.createMessageAssembler();
+    asm.push(ws.decodeFrame(makeClientFrame(0x01, 'a', false)));
+    assert.throws(() => asm.push(ws.decodeFrame(makeClientFrame(0x01, 'b', true))));
+  });
+
+  test('a reassembled message over the size cap is refused', () => {
+    const asm = ws.createMessageAssembler(10);
+    asm.push(ws.decodeFrame(makeClientFrame(0x01, '123456', false)));
+    assert.throws(() => asm.push(ws.decodeFrame(makeClientFrame(0x00, '7890ab', true))));
+  });
+
+  // ========== Port fallback ==========
+  console.log('\n--- Port fallback ---');
+
+  test('a port in use is retried on another port, up to the attempt limit', () => {
+    const inUse = { code: 'EADDRINUSE' };
+    assert.strictEqual(ws.shouldRetryBind(inUse, 1, 'generated'), true);
+    assert.strictEqual(ws.shouldRetryBind(inUse, 2, 'generated'), true);
+    assert.strictEqual(ws.shouldRetryBind(inUse, ws.MAX_BIND_ATTEMPTS, 'generated'), false);
+  });
+
+  test('other bind errors and an explicit token are never retried', () => {
+    assert.strictEqual(ws.shouldRetryBind({ code: 'EACCES' }, 1, 'generated'), false);
+    assert.strictEqual(ws.shouldRetryBind({ code: 'EADDRINUSE' }, 1, 'env'), false);
+  });
+
   // ========== Summary ==========
   console.log(`\n--- Results: ${passed} passed, ${failed} failed ---`);
   if (failed > 0) process.exit(1);

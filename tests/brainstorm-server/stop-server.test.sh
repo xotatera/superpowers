@@ -97,8 +97,14 @@ for _ in $(seq 1 40); do
   sleep 0.1
 done
 echo "$SRV" > "$SESS/state/server.pid"
+echo '{"type":"server-started"}' > "$SESS/state/server.log"
 OUT="$("$STOP" "$SESS")"
 sleep 0.3
+if [[ -f "$SESS/state/server.log" ]]; then
+  ok "persistent stop keeps server.log (the session directory is kept for review)"
+else
+  bad "persistent stop keeps server.log (the session directory is kept for review)" "server.log deleted after: $OUT"
+fi
 if kill -0 "$SRV" 2>/dev/null; then
   bad "persistent brainstorm server still running after stop" "$OUT"
 else
