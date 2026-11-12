@@ -58,7 +58,13 @@ if kill -0 "$pid" 2>/dev/null; then
 else
   bad "a session end for another Claude process leaves the server running" "server $pid gone"
 fi
-CLAUDE_PID="$owner" bash "$HOOK" </dev/null >"$T/out-own" 2>&1
+printf '{"session_id":"s","reason":"clear"}' | CLAUDE_PID="$owner" bash "$HOOK" >"$T/out-clear" 2>&1
+if kill -0 "$pid" 2>/dev/null && [[ -f "$REGISTRY/$owner" ]]; then
+  ok "a /clear leaves the owner's servers running and registered"
+else
+  bad "a /clear leaves the owner's servers running and registered" "server $pid or registry gone"
+fi
+printf '{"session_id":"s","reason":"prompt_input_exit"}' | CLAUDE_PID="$owner" bash "$HOOK" >"$T/out-own" 2>&1
 for _ in $(seq 1 30); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
 if ! kill -0 "$pid" 2>/dev/null; then
   ok "the owner's session end stops its server"
@@ -81,6 +87,19 @@ else
   bad "stop-server.sh removes its directory from the registry" "$(cat "$REGISTRY/$owner2")"
 fi
 
+echo "--- concurrent unregister ---"
+dir3="$(start_server)"
+owner3="$(owner_of "$dir3")"
+# A stale or concurrent stop's fixed-name temp file must not block this one.
+mkdir -p "$REGISTRY/$owner3.tmp"
+bash "$STOP" "$dir3" >/dev/null 2>&1
+if ! grep -qxF "$dir3" "$REGISTRY/$owner3" 2>/dev/null; then
+  ok "unregister does not depend on a shared temp file name"
+else
+  bad "unregister does not depend on a shared temp file name" "$(cat "$REGISTRY/$owner3")"
+fi
+rmdir "$REGISTRY/$owner3.tmp" 2>/dev/null
+
 echo "--- nothing registered ---"
 rm -rf "$REGISTRY"
 if CLAUDE_PID=12345 bash "$HOOK" </dev/null >"$T/out-none" 2>&1 && [[ ! -s "$T/out-none" ]]; then
@@ -93,6 +112,12 @@ if grep -q '"SessionEnd"' "$REPO_ROOT/hooks/hooks.json" && grep -q 'session-end'
   ok "hooks.json runs session-end on SessionEnd"
 else
   bad "hooks.json runs session-end on SessionEnd" "not registered"
+fi
+
+if node -e 'const h=require(process.argv[1]).hooks.SessionEnd[0].hooks[0]; process.exit(h.timeout===15?0:1)' "$REPO_ROOT/hooks/hooks.json"; then
+  ok "the SessionEnd hook declares a 15 s timeout"
+else
+  bad "the SessionEnd hook declares a 15 s timeout" "$(grep -n timeout "$REPO_ROOT/hooks/hooks.json")"
 fi
 
 echo "--- Results: $PASS passed, $FAIL failed ---"
