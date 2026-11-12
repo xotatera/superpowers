@@ -26,11 +26,25 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// The developer's own telemetry opt-outs must not leak into tests that check
+// the default (logo shown); each opt-out test sets the one it exercises.
+const TELEMETRY_OPT_OUTS = [
+  'SUPERPOWERS_DISABLE_TELEMETRY',
+  'DISABLE_TELEMETRY',
+  'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC'
+];
+
+function baseEnv() {
+  const env = { ...process.env };
+  for (const name of TELEMETRY_OPT_OUTS) delete env[name];
+  return env;
+}
+
 function startServer({ port, dir, env = {}, serverPath = SERVER_PATH }) {
   cleanup(dir);
   return spawn('node', [serverPath], {
     env: {
-      ...process.env,
+      ...baseEnv(),
       BRAINSTORM_PORT: String(port),
       BRAINSTORM_DIR: dir,
       BRAINSTORM_TOKEN: TOKEN,

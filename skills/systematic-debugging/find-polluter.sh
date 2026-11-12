@@ -29,7 +29,7 @@ TEST_PATTERN="${TEST_PATTERN#./}"
 TEST_FILES=()
 while IFS= read -r -d '' TEST_FILE; do
   TEST_FILES+=("$TEST_FILE")
-done < <(find . \( -path "./$TEST_PATTERN" -o -path "./${TEST_PATTERN//\*\*\//}" \) -print0 | sort -zu)
+done < <(find . -name node_modules -prune -o \( -path "./$TEST_PATTERN" -o -path "./${TEST_PATTERN//\*\*\//}" \) -print0 | sort -zu)
 TOTAL=${#TEST_FILES[@]}
 
 echo "Found $TOTAL test files"
@@ -62,8 +62,8 @@ for TEST_FILE in ${TEST_FILES[@]+"${TEST_FILES[@]}"}; do
     ls -la "$POLLUTION_CHECK"
     echo ""
     echo "To investigate:"
-    echo "  npm test $TEST_FILE    # Run just this test"
-    echo "  cat $TEST_FILE         # Review test code"
+    printf '  npm test %q    # Run just this test\n' "$TEST_FILE"
+    printf '  cat %q         # Review test code\n' "$TEST_FILE"
     exit 1
   fi
 done
