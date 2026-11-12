@@ -138,6 +138,23 @@ else
   fail "npm test receives the newline path as one existing file (got: '$(cat "$PROJECT/npm-args.log" 2>/dev/null | tr '\n' ' ')')"
 fi
 
+echo "Test: the printed follow-up commands quote a spaced path"
+setup_project
+rm -f "$PROJECT/src/top.test.ts" "$PROJECT/src/feature/nested.test.ts"
+mkdir -p "$PROJECT/src/with space"
+echo "test('spaced')" > "$PROJECT/src/with space/a b.test.ts"
+OUTPUT="$(run_polluter 'src/**/*.test.ts')"
+assert_contains "$OUTPUT" 'npm test ./src/with\ space/a\ b.test.ts' "the npm hint can be copied as one argument"
+assert_contains "$OUTPUT" 'cat ./src/with\ space/a\ b.test.ts' "the cat hint can be copied as one argument"
+
+echo "Test: tests inside node_modules are not run"
+setup_project
+mkdir -p "$PROJECT/node_modules/pkg/src" "$PROJECT/src/node_modules/inner"
+echo "test('dep')" > "$PROJECT/node_modules/pkg/src/dep.test.ts"
+echo "test('inner')" > "$PROJECT/src/node_modules/inner/inner.test.ts"
+OUTPUT="$(run_polluter '**/*.test.ts')"
+assert_contains "$OUTPUT" "Found 2 test files" "only the project's own two test files are found"
+
 echo ""
 if [ "$FAILURES" -gt 0 ]; then
   echo "$FAILURES test(s) failed"

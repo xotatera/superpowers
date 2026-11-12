@@ -19,6 +19,17 @@
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# Escape a value for embedding in a JSON string (backslash, quote, newline, CR, tab).
+json_escape() {
+  local s="$1"
+  s="${s//\\/\\\\}"
+  s="${s//\"/\\\"}"
+  s="${s//$'\n'/\\n}"
+  s="${s//$'\r'/\\r}"
+  s="${s//$'\t'/\\t}"
+  printf '%s' "$s"
+}
+
 # Parse arguments
 PROJECT_DIR=""
 FOREGROUND="false"
@@ -57,7 +68,7 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     *)
-      echo "{\"error\": \"Unknown argument: $1\"}"
+      echo "{\"error\": \"Unknown argument: $(json_escape "$1")\"}"
       exit 1
       ;;
   esac
@@ -110,9 +121,6 @@ fi
 # keep everything this script and the server create owner-only.
 umask 077
 
-# Generate unique session directory
-SESSION_ID="$$-$(date +%s)"
-
 if [[ -n "$PROJECT_DIR" ]]; then
   # Make the project dir absolute now: the script cds into its own directory
   # before starting the server, which would re-root a relative path there.
@@ -121,7 +129,19 @@ if [[ -n "$PROJECT_DIR" ]]; then
     echo "{\"error\": \"Cannot create or enter --project-dir\"}"
     exit 1
   fi
-  SESSION_DIR="${PROJECT_DIR}/.superpowers/brainstorm/${SESSION_ID}"
+  BRAINSTORM_ROOT="${PROJECT_DIR}/.superpowers/brainstorm"
+  # Session files include the key (.last-token); keep the whole directory out
+  # of git without touching a .gitignore the project already has there.
+  if ! mkdir -p "$BRAINSTORM_ROOT"; then
+    echo "{\"error\": \"Cannot create $(json_escape "$BRAINSTORM_ROOT")\"}"
+    exit 1
+  fi
+  [[ -e "$BRAINSTORM_ROOT/.gitignore" ]] || printf '*\n' > "$BRAINSTORM_ROOT/.gitignore"
+  # A new directory with an unguessable name, as for /tmp below.
+  if ! SESSION_DIR="$(mktemp -d "$BRAINSTORM_ROOT/session-XXXXXXXXXX")"; then
+    echo "{\"error\": \"Cannot create a session directory under $(json_escape "$BRAINSTORM_ROOT")\"}"
+    exit 1
+  fi
   # Persist the bound port and key per project so a restart reuses them and an
   # already-open browser tab reconnects to the same URL with a valid cookie.
   export BRAINSTORM_PORT_FILE="${PROJECT_DIR}/.superpowers/brainstorm/.last-port"
@@ -201,7 +221,8 @@ for _ in {1..50}; do
       sleep 0.1
     done
     if [[ "$alive" != "true" ]]; then
-      echo "{\"error\": \"Server started but was killed. Retry in a persistent terminal with: $SCRIPT_DIR/start-server.sh${PROJECT_DIR:+ --project-dir $PROJECT_DIR} --host $BIND_HOST --url-host $URL_HOST --foreground\"}"
+      retry="$SCRIPT_DIR/start-server.sh${PROJECT_DIR:+ --project-dir $(printf '%q' "$PROJECT_DIR")} --host $(printf '%q' "$BIND_HOST") --url-host $(printf '%q' "$URL_HOST") --foreground"
+      echo "{\"error\": \"Server started but was killed. Retry in a persistent terminal with: $(json_escape "$retry")\"}"
       exit 1
     fi
     grep "server-started" "$LOG_FILE" | head -1

@@ -180,13 +180,110 @@ else
 fi
 
 if [[ -n "$tmp_session_dir" && "$(stat -c %a "$tmp_session_dir" 2>/dev/null)" == "700" ]]; then
-  pass "default session dir is owner-only (700)"
+  pass "default session dir is owner-only (700) (regression check: umask 077 already gave this)"
 else
-  fail "default session dir is owner-only (700)" "mode: $(stat -c %a "$tmp_session_dir" 2>/dev/null)"
+  fail "default session dir is owner-only (700) (regression check: umask 077 already gave this)" "mode: $(stat -c %a "$tmp_session_dir" 2>/dev/null)"
 fi
 
 if [[ "$tmp_session_dir" == /tmp/brainstorm-* ]]; then
   rm -rf "$tmp_session_dir"
+fi
+
+echo ""
+echo "--- start-server.sh never signals a PID it did not start ---"
+
+# Plant a state/server.pid naming a process this test owns, in the session
+# directory the script would pick if its name were guessable (<pid>-<epoch>),
+# then let the script run. The planted process must survive.
+cat > "$TEST_DIR/fake-bin/date" <<'EOF'
+#!/usr/bin/env bash
+if [[ "${1:-}" == "+%s" ]]; then echo 1700000000; else /usr/bin/date "$@"; fi
+EOF
+chmod +x "$TEST_DIR/fake-bin/date"
+plant_project="$TEST_DIR/plant project"
+rm -rf "$plant_project"
+mkdir -p "$plant_project"
+sleep 300 &
+sleeper=$!
+gate="$TEST_DIR/gate"
+launcher_pid_file="$TEST_DIR/launcher.pid"
+rm -f "$gate" "$launcher_pid_file"
+mkfifo "$gate"
+(
+  PATH="$TEST_DIR/fake-bin:$PATH" MSYSTEM="" \
+    bash -c 'echo $$ > "$1"; read -r _ < "$2"; exec bash "$3" --project-dir "$4" --foreground' \
+    _ "$launcher_pid_file" "$gate" "$START_SCRIPT" "$plant_project" >/dev/null 2>&1
+) &
+launcher=$!
+until [[ -s "$launcher_pid_file" ]]; do sleep 0.05; done
+planted_state="$plant_project/.superpowers/brainstorm/$(cat "$launcher_pid_file")-1700000000/state"
+mkdir -p "$planted_state"
+echo "$sleeper" > "$planted_state/server.pid"
+echo go > "$gate"
+wait "$launcher"
+if kill -0 "$sleeper" 2>/dev/null; then
+  pass "a planted state/server.pid is never signalled"
+else
+  fail "a planted state/server.pid is never signalled" "the planted process $sleeper was killed"
+fi
+kill "$sleeper" 2>/dev/null
+wait "$sleeper" 2>/dev/null
+rm -f "$TEST_DIR/fake-bin/date"
+
+echo ""
+echo "--- start-server.sh project session files stay out of git ---"
+
+ignore_project="$TEST_DIR/ignore project"
+rm -rf "$ignore_project"
+mkdir -p "$ignore_project"
+PATH="$TEST_DIR/fake-bin:$PATH" MSYSTEM="" \
+  bash "$START_SCRIPT" --project-dir "$ignore_project" --foreground >/dev/null 2>&1 || true
+if [[ "$(cat "$ignore_project/.superpowers/brainstorm/.gitignore" 2>/dev/null)" == "*" ]]; then
+  pass "writes .superpowers/brainstorm/.gitignore ignoring everything (the key file lives there)"
+else
+  fail "writes .superpowers/brainstorm/.gitignore ignoring everything (the key file lives there)" \
+       "got: '$(cat "$ignore_project/.superpowers/brainstorm/.gitignore" 2>/dev/null)'"
+fi
+printf 'custom\n' > "$ignore_project/.superpowers/brainstorm/.gitignore"
+PATH="$TEST_DIR/fake-bin:$PATH" MSYSTEM="" \
+  bash "$START_SCRIPT" --project-dir "$ignore_project" --foreground >/dev/null 2>&1 || true
+if [[ "$(cat "$ignore_project/.superpowers/brainstorm/.gitignore")" == "custom" ]]; then
+  pass "an existing .superpowers/brainstorm/.gitignore is not overwritten"
+else
+  fail "an existing .superpowers/brainstorm/.gitignore is not overwritten" "it was rewritten"
+fi
+
+echo ""
+echo "--- start-server.sh error output is valid JSON ---"
+
+is_json() {
+  node -e 'JSON.parse(require("fs").readFileSync(0, "utf8"))' <<<"$1" 2>/dev/null
+}
+
+captured=$(bash "$START_SCRIPT" 'bad"arg\x' 2>/dev/null || true)
+if is_json "$captured"; then
+  pass "an unknown argument with a quote and a backslash still yields valid JSON"
+else
+  fail "an unknown argument with a quote and a backslash still yields valid JSON" "got: $captured"
+fi
+
+cat > "$TEST_DIR/fake-bin/node" <<'EOF'
+#!/usr/bin/env bash
+echo '{"type":"server-started"}'
+exit 0
+EOF
+chmod +x "$TEST_DIR/fake-bin/node"
+quote_project="$TEST_DIR/quote\"project"
+rm -rf "$quote_project"
+mkdir -p "$quote_project"
+captured=$(
+  PATH="$TEST_DIR/fake-bin:$PATH" MSYSTEM="" \
+    bash "$START_SCRIPT" --project-dir "$quote_project" --background 2>/dev/null || true
+)
+if echo "$captured" | grep -q "Server started but was killed" && is_json "$captured"; then
+  pass "the killed-server retry message is valid JSON for a project dir containing a quote"
+else
+  fail "the killed-server retry message is valid JSON for a project dir containing a quote" "got: $captured"
 fi
 
 echo ""
