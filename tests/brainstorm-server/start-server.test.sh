@@ -155,6 +155,41 @@ for relative_dir in "." "new project dir"; do
 done
 
 echo ""
+echo "--- start-server.sh default /tmp session dir ---"
+
+# Without --project-dir the session lives under /tmp. Its name must not be
+# guessable (another local account could create it first and plant a
+# state/server.pid), and the script must create it itself, owner-only.
+captured=$(
+  PATH="$TEST_DIR/fake-bin:$PATH" \
+    MSYSTEM="" \
+    bash "$START_SCRIPT" --foreground 2>&1 || true
+)
+tmp_session_dir=$(echo "$captured" | grep "CAPTURED_BRAINSTORM_DIR=" | head -1 | sed 's/CAPTURED_BRAINSTORM_DIR=//')
+
+if [[ "$tmp_session_dir" == /tmp/brainstorm-* && -d "$tmp_session_dir" ]]; then
+  pass "default session dir is created under /tmp/brainstorm-*"
+else
+  fail "default session dir is created under /tmp/brainstorm-*" "got: $captured"
+fi
+
+if [[ -n "$tmp_session_dir" && ! "$tmp_session_dir" =~ ^/tmp/brainstorm-[0-9]+-[0-9]+$ ]]; then
+  pass "default session dir name is not <pid>-<epoch>"
+else
+  fail "default session dir name is not <pid>-<epoch>" "got: '$tmp_session_dir'"
+fi
+
+if [[ -n "$tmp_session_dir" && "$(stat -c %a "$tmp_session_dir" 2>/dev/null)" == "700" ]]; then
+  pass "default session dir is owner-only (700)"
+else
+  fail "default session dir is owner-only (700)" "mode: $(stat -c %a "$tmp_session_dir" 2>/dev/null)"
+fi
+
+if [[ "$tmp_session_dir" == /tmp/brainstorm-* ]]; then
+  rm -rf "$tmp_session_dir"
+fi
+
+echo ""
 echo "--- Results: $passed passed, $failed failed ---"
 if [[ $failed -gt 0 ]]; then
   exit 1
