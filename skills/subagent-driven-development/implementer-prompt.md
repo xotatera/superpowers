@@ -8,6 +8,7 @@ Subagent (general-purpose):
   model: [MODEL — REQUIRED: choose per SKILL.md Model Selection; an omitted
          model silently inherits the session's most expensive one]
   prompt: |
+    <!-- superpowers-kind: implementer -->
     You are implementing Task N: [task name]
 
     ## Task Description

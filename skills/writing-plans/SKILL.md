@@ -94,6 +94,8 @@ owns the code, in that task's own step style.]
 ````markdown
 ### Task N: [Component Name]
 
+**Size:** S|M|L · **Risk:** low|medium|high · **Owns:** `paths/the/task/changes` · **Gate:** `command that proves the task`
+
 **Files:**
 - Create: `exact/path/to/file.py`
 - Modify: `exact/path/to/existing.py:123-145`
@@ -136,6 +138,16 @@ git add tests/path/test.py src/path/file.py
 git commit -m "feat: add specific feature"
 ```
 ````
+
+## Task Fields
+
+The line under each task heading is read by tools, so use exactly these
+values. **Size** is the expected change: S up to about 50 changed lines, M up
+to about 200, L more. **Risk** is what a mistake in this task would cost:
+low (local, caught by its own test), medium (other tasks or users notice),
+high (data, security, or work that is hard to undo). **Owns** lists the
+paths the task changes; two tasks owning the same path cannot run in
+parallel. **Gate** is the one command whose pass means the task is done.
 
 ## What a Step Contains
 

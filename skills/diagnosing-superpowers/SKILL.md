@@ -40,7 +40,10 @@ Create a todo per step. Steps 5–7 run only on their stated condition.
    `plan-adherence.md`, `repeated-work.md`, `stumbles.md`,
    `quality-evidence.md`, `request-conflicts.md`, `cost-and-time.md`.
    Split a dimension by turn range when the transcript is long. Discard
-   any returned finding without `path:line`.
+   any returned finding without `path:line`. Begin every dispatch prompt
+   in this skill (analysts, scrubber, scrub auditor, matcher) with the line
+   `<!-- superpowers-kind: diagnosis-<prompt file name> -->`, for example
+   `<!-- superpowers-kind: diagnosis-stumbles -->`.
 4. **Report.** Fill every section of `templates/report.md` in order, write
    it to the workspace, show it, and give the path. Check what cited content
    actually proves and preserve the supporting case; a symlink alias is not a
