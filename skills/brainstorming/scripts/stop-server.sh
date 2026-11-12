@@ -25,8 +25,10 @@ unregister_session() {
   for file in "$registry"/*; do
     [[ -f "$file" ]] || continue
     grep -qxF "$SESSION_DIR" "$file" || continue
-    grep -vxF "$SESSION_DIR" "$file" > "$file.tmp" || true
-    mv -f "$file.tmp" "$file"
+    local tmp
+    tmp="$(mktemp "$file.XXXXXX")" || continue
+    grep -vxF "$SESSION_DIR" "$file" > "$tmp" || true
+    mv -f "$tmp" "$file"
     [[ -s "$file" ]] || rm -f "$file"
   done
 }

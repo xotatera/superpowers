@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # SessionEnd hook for superpowers: stop the brainstorm servers this Claude
 # Code process started (start-server.sh registers each session directory
-# under its owner's PID). Prints nothing; always exits 0.
-cat > /dev/null 2>&1 || true
+# under its owner's PID). A /clear keeps them: the process and its browser
+# tab live on, and its real exit stops them. Prints nothing; always exits 0.
+input="$(cat 2>/dev/null || true)"
+[[ "$input" =~ \"reason\"[[:space:]]*:[[:space:]]*\"clear\" ]] && exit 0
 
 case "$0" in
   */*|*\\*) SCRIPT_DIR="${0%[/\\]*}" ;;
