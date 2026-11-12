@@ -226,6 +226,39 @@ PLAN
         fail "outside any repository, task-start and task-done write nothing to the plan's repository"
     fi
 
+    # --- task-done: arguments are rendered so the ledger line can be re-typed ---
+    out="$(cd "$repo" && "$EP_SCRIPTS/task-done" plan.md 1 HEAD -- printf '%s\n' "it's" 2>&1)" || true
+    local expected3="tests: printf '%s\\n' 'it'\\''s' →"
+    if grep -qF "$expected3" "$ledger"; then
+        pass "task-done quotes arguments with a backslash or a single quote so they re-type exactly"
+    else
+        fail "task-done quotes arguments with a backslash or a single quote so they re-type exactly"
+        echo "    expected: $expected3"
+        echo "    ledger:"; tail -n 1 "$ledger" | sed 's/^/      /'
+    fi
+
+    # --- helpers without exec bits (some marketplace extractors drop them, #2040) ---
+    local noexec="$TEST_ROOT/noexec"
+    mkdir -p "$noexec/skills"
+    cp -R "$REPO_ROOT/skills/executing-plans" "$REPO_ROOT/skills/subagent-driven-development" "$noexec/skills/"
+    chmod -x "$noexec/skills/subagent-driven-development/scripts/"*
+    rc=0
+    out="$(cd "$repo" && bash "$noexec/skills/executing-plans/scripts/task-start" plan.md 1 2>&1)" || rc=$?
+    if [[ "$rc" -eq 0 && "$out" == *"brief: "* ]]; then
+        pass "task-start works when the SDD helpers have lost their exec bits"
+    else
+        fail "task-start works when the SDD helpers have lost their exec bits (exit $rc)"
+        echo "    got: $out"
+    fi
+    rc=0
+    out="$(cd "$repo" && bash "$noexec/skills/executing-plans/scripts/task-done" plan.md 1 HEAD -- true 2>&1)" || rc=$?
+    if [[ "$rc" -eq 0 && "$out" == *"ledger: "* ]]; then
+        pass "task-done works when the SDD helpers have lost their exec bits"
+    else
+        fail "task-done works when the SDD helpers have lost their exec bits (exit $rc)"
+        echo "    got: $out"
+    fi
+
     echo
     if [[ "$FAILURES" -eq 0 ]]; then
         echo "PASS"

@@ -6,14 +6,18 @@
  * Usage:
  *   ./render-graphs.js <skill-directory>           # Render each diagram separately
  *   ./render-graphs.js <skill-directory> --combine # Combine all into one diagram
+ *   ./render-graphs.js <skill-directory> --out DIR # Write into DIR
  *
- * Extracts all ```dot blocks from SKILL.md and renders to SVG.
+ * Extracts all ```dot blocks from SKILL.md and renders to SVG. Without --out
+ * the files go to a fresh temporary directory, never into the skill's own
+ * directory (which may be an installed plugin); the path is printed.
  * Useful for helping your human partner visualize the process flows.
  *
  * Requires: graphviz (dot) installed on system
  */
 
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
 
@@ -84,13 +88,20 @@ function renderToSvg(dotContent) {
 function main() {
   const args = process.argv.slice(2);
   const combine = args.includes('--combine');
-  const skillDirArg = args.find(a => !a.startsWith('--'));
+  const outIndex = args.indexOf('--out');
+  const outArg = outIndex >= 0 ? args[outIndex + 1] : undefined;
+  if (outIndex >= 0 && (!outArg || outArg.startsWith('--'))) {
+    console.error('Error: --out needs a directory');
+    process.exit(1);
+  }
+  const skillDirArg = args.find((a, i) => !a.startsWith('--') && (outIndex < 0 || i !== outIndex + 1));
 
   if (!skillDirArg) {
-    console.error('Usage: render-graphs.js <skill-directory> [--combine]');
+    console.error('Usage: render-graphs.js <skill-directory> [--combine] [--out DIR]');
     console.error('');
     console.error('Options:');
     console.error('  --combine    Combine all diagrams into one SVG');
+    console.error('  --out DIR    Write into DIR (default: a fresh temporary directory)');
     console.error('');
     console.error('Example:');
     console.error('  ./render-graphs.js ../subagent-driven-development');
@@ -114,7 +125,8 @@ function main() {
   } catch {
     console.error('Error: graphviz (dot) not found. Install with:');
     console.error('  brew install graphviz    # macOS');
-    console.error('  apt install graphviz     # Linux');
+    console.error('  apt install graphviz     # Debian, Ubuntu');
+    console.error('  or the graphviz package from your package manager (dnf, pacman, emerge media-gfx/graphviz, ...)');
     process.exit(1);
   }
 
@@ -128,9 +140,12 @@ function main() {
 
   console.log(`Found ${blocks.length} diagram(s) in ${path.basename(skillDir)}/SKILL.md`);
 
-  const outputDir = path.join(skillDir, 'diagrams');
-  if (!fs.existsSync(outputDir)) {
-    fs.mkdirSync(outputDir);
+  let outputDir;
+  if (outArg) {
+    outputDir = path.resolve(outArg);
+    fs.mkdirSync(outputDir, { recursive: true });
+  } else {
+    outputDir = fs.mkdtempSync(path.join(os.tmpdir(), `render-graphs-${skillName}-`));
   }
 
   if (combine) {

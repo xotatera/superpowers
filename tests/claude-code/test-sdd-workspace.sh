@@ -827,6 +827,33 @@ PLAN
         echo "    now: $(cat "$own/.superpowers/sdd/.gitignore")"
     fi
 
+    # --- a written brief gets the mode a plain redirect would give it ---
+    local mode_out="$TEST_ROOT/mode-brief.md" want_mode
+    rm -f "$mode_out"
+    printf '## Task 1: Mode check\n\nBody.\n' > "$repo/plan-mode.md"
+    (cd "$repo" && umask 022 && "$SDD_SCRIPTS/task-brief" plan-mode.md 1 "$mode_out" >/dev/null 2>&1) || true
+    want_mode=644
+    if [[ -f "$mode_out" && "$(stat -c %a "$mode_out" 2>/dev/null || stat -f %Lp "$mode_out")" == "$want_mode" ]]; then
+        pass "task-brief writes the brief with the umask's mode (644 under umask 022)"
+    else
+        fail "task-brief writes the brief with the umask's mode (644 under umask 022)"
+        echo "    mode: $(stat -c %a "$mode_out" 2>/dev/null || echo missing)"
+    fi
+
+    # --- task-brief leaves an existing OUTFILE alone when it fails ---
+    local keep_out="$TEST_ROOT/keep-brief.md"
+    for args in "plan-unclosed.md 9" "plan-unclosed.md 1"; do
+        printf 'KEEP\n' > "$keep_out"
+        # shellcheck disable=SC2086 # plan and task number as two words
+        (cd "$repo" && "$SDD_SCRIPTS/task-brief" $args "$keep_out" >/dev/null 2>&1) || true
+        if [[ "$(cat "$keep_out" 2>/dev/null)" == "KEEP" ]]; then
+            pass "a failing task-brief ($args) leaves an existing OUTFILE unchanged"
+        else
+            fail "a failing task-brief ($args) leaves an existing OUTFILE unchanged"
+            echo "    now: $(cat "$keep_out" 2>/dev/null || echo '(deleted)')"
+        fi
+    done
+
     echo ""
     if [[ "$FAILURES" -ne 0 ]]; then
         echo "FAILED: $FAILURES assertion(s)."

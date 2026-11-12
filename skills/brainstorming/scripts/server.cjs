@@ -5,7 +5,7 @@ const path = require('path');
 
 // ========== WebSocket Protocol (RFC 6455) ==========
 
-const OPCODES = { TEXT: 0x01, CLOSE: 0x08, PING: 0x09, PONG: 0x0A };
+const OPCODES = { CONTINUATION: 0x00, TEXT: 0x01, CLOSE: 0x08, PING: 0x09, PONG: 0x0A };
 const WS_MAGIC = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 const MAX_FRAME_PAYLOAD_BYTES = 10 * 1024 * 1024;
 
@@ -41,6 +41,7 @@ function decodeFrame(buffer) {
   if (buffer.length < 2) return null;
 
   const secondByte = buffer[1];
+  const fin = (buffer[0] & 0x80) !== 0;
   const opcode = buffer[0] & 0x0F;
   const masked = (secondByte & 0x80) !== 0;
   let payloadLen = secondByte & 0x7F;
@@ -77,7 +78,47 @@ function decodeFrame(buffer) {
     data[i] = buffer[dataOffset + i] ^ mask[i % 4];
   }
 
-  return { opcode, payload: data, bytesConsumed: totalLen };
+  return { fin, opcode, payload: data, bytesConsumed: totalLen };
+}
+
+// Reassembles text messages a client splits over continuation frames
+// (RFC 6455 section 5.4). push() takes a decoded TEXT or CONTINUATION frame and
+// returns the complete message text, or null while it is unfinished; it throws
+// on a protocol error or when the message grows past maxBytes.
+function createMessageAssembler(maxBytes = MAX_FRAME_PAYLOAD_BYTES) {
+  let parts = null;
+  let size = 0;
+  return {
+    push(frame) {
+      if (frame.opcode === OPCODES.TEXT) {
+        if (parts) throw new Error('New text message before the previous one finished');
+        if (frame.fin) return frame.payload.toString();
+        parts = [frame.payload];
+        size = frame.payload.length;
+        if (size > maxBytes) throw new Error('WebSocket message exceeds maximum allowed size');
+        return null;
+      }
+      if (frame.opcode === OPCODES.CONTINUATION) {
+        if (!parts) throw new Error('Continuation frame without a started message');
+        size += frame.payload.length;
+        if (size > maxBytes) throw new Error('WebSocket message exceeds maximum allowed size');
+        parts.push(frame.payload);
+        if (!frame.fin) return null;
+        const text = Buffer.concat(parts).toString();
+        parts = null;
+        size = 0;
+        return text;
+      }
+      throw new Error('Not a data frame');
+    }
+  };
+}
+
+// A port in use is retried on a fresh random port, a bounded number of times,
+// unless the token was given explicitly (it is tied to the port the caller chose).
+const MAX_BIND_ATTEMPTS = 10;
+function shouldRetryBind(err, attempts, tokenSource) {
+  return Boolean(err) && err.code === 'EADDRINUSE' && tokenSource !== 'env' && attempts < MAX_BIND_ATTEMPTS;
 }
 
 // ========== Configuration ==========
@@ -456,6 +497,7 @@ function handleUpgrade(req, socket) {
   );
 
   let buffer = Buffer.alloc(0);
+  const assembler = createMessageAssembler();
   clients.add(socket);
 
   socket.on('data', (chunk) => {
@@ -474,8 +516,20 @@ function handleUpgrade(req, socket) {
 
       switch (result.opcode) {
         case OPCODES.TEXT:
-          handleMessage(result.payload.toString());
+        case OPCODES.CONTINUATION: {
+          let text;
+          try {
+            text = assembler.push(result);
+          } catch (e) {
+            const closeBuf = Buffer.alloc(2);
+            closeBuf.writeUInt16BE(1002);
+            socket.end(encodeFrame(OPCODES.CLOSE, closeBuf));
+            clients.delete(socket);
+            return;
+          }
+          if (text !== null) handleMessage(text);
           break;
+        }
         case OPCODES.CLOSE:
           socket.end(encodeFrame(OPCODES.CLOSE, Buffer.alloc(0)));
           clients.delete(socket);
@@ -657,8 +711,9 @@ function startServer() {
   }
 
   // If the preferred port is already taken (e.g. a previous server is still
-  // alive), fall back to a random port once instead of failing.
+  // alive), retry on a random port, up to MAX_BIND_ATTEMPTS binds in all.
   let triedFallback = false;
+  let bindAttempts = 1;
 
   function onListen() {
     // Cookie name keys on the ACTUAL bound port (may differ from the preferred
@@ -689,18 +744,21 @@ function startServer() {
   }
 
   server.on('error', (err) => {
-    if (err.code === 'EADDRINUSE' && !triedFallback) {
-      if (tokenSource === 'env') {
-        console.error('Server failed to bind: preferred port is in use and BRAINSTORM_TOKEN is set; refusing fallback with explicit token');
-        process.exit(1);
-      }
+    if (err.code === 'EADDRINUSE' && tokenSource === 'env') {
+      console.error('Server failed to bind: preferred port is in use and BRAINSTORM_TOKEN is set; refusing fallback with explicit token');
+      process.exit(1);
+    }
+    if (shouldRetryBind(err, bindAttempts, tokenSource)) {
+      bindAttempts++;
       triedFallback = true;
       PORT = randomPort();
       if (tokenSource === 'file') {
         TOKEN = generateToken();
         tokenSource = 'generated-fallback';
       }
-      server.listen(PORT, HOST, onListen);
+      // No callback here: the first listen() already registered onListen as a
+      // one-shot 'listening' listener, and a failed attempt leaves it in place.
+      server.listen(PORT, HOST);
     } else {
       console.error('Server failed to bind:', err.message);
       process.exit(1);
@@ -718,6 +776,9 @@ module.exports = {
   encodeFrame,
   decodeFrame,
   browserLauncherForPlatform,
+  createMessageAssembler,
+  shouldRetryBind,
   OPCODES,
-  MAX_FRAME_PAYLOAD_BYTES
+  MAX_FRAME_PAYLOAD_BYTES,
+  MAX_BIND_ATTEMPTS
 };

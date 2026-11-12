@@ -25,15 +25,19 @@ sdd="$(cd "$(dirname "$0")/../../subagent-driven-development/scripts" && pwd)"
 repo=$("${BASH:-bash}" "$sdd/sdd-repo" --with-commit)
 git -C "$repo" rev-parse --verify --quiet "$base" >/dev/null || { echo "bad BASE: $base" >&2; exit 2; }
 
-dir=$("$sdd/sdd-workspace" "$plan")
+# Through bash: exec bits can be lost on install (#2040).
+dir=$("${BASH:-bash}" "$sdd/sdd-workspace" "$plan")
 log="$dir/task-${n}-tests.log"
 ledger="$dir/progress.md"
 
-# Render the command the way a person would type it, for the ledger line.
+# Render the command the way a person would type it, for the ledger line:
+# an argument with anything outside a safe set is single-quoted, with each
+# embedded ' written as '\''.
 cmd=""
+q="'\\''"
 for a in "$@"; do
   case "$a" in
-    *[[:space:]\"\;\|\&]*) cmd="$cmd '$a'" ;;
+    "" | *[!A-Za-z0-9_./=:@%+,-]*) cmd="$cmd '${a//\'/$q}'" ;;
     *) cmd="$cmd $a" ;;
   esac
 done

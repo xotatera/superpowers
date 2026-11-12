@@ -10,6 +10,7 @@
 
 const { spawn } = require('child_process');
 const http = require('http');
+const net = require('net');
 const WebSocket = require('ws');
 const fs = require('fs');
 const path = require('path');
@@ -408,6 +409,19 @@ async function runTests() {
       ws.close();
     });
 
+    await test('a user event split over WebSocket fragments arrives whole', async () => {
+      stdoutAccum = '';
+      const ws = new WebSocket(`ws://localhost:${TEST_PORT}/?key=${TOKEN}`);
+      await new Promise(resolve => ws.on('open', resolve));
+
+      ws.send('{"type":"click","text":"Frag', { fin: false });
+      ws.send('mented Button"}', { fin: true });
+      await waitFor(() => stdoutAccum.includes('Fragmented Button'), 'fragmented event never arrived');
+
+      assert(stdoutAccum.includes('"source":"user-event"'), 'Should tag the reassembled event');
+      ws.close();
+    });
+
     await test('writes choice events to state/events', async () => {
       // Clean up events from prior tests
       await settleWatcher();
@@ -636,6 +650,36 @@ async function runTests() {
       assert(template.includes('<!-- CONTENT -->'), 'Should have content placeholder');
       assert(template.includes('frame-content'), 'Should have content container');
       return Promise.resolve();
+    });
+
+    // ========== Port fallback ==========
+    console.log('\n--- Port fallback ---');
+
+    await test('after falling back from a busy port the server announces itself once', async () => {
+      const blocker = net.createServer();
+      await new Promise((resolve, reject) => {
+        blocker.once('error', reject);
+        blocker.listen(0, '127.0.0.1', resolve);
+      });
+      const busyPort = blocker.address().port;
+      const dir = '/tmp/brainstorm-test-fallback';
+      fs.rmSync(dir, { recursive: true, force: true });
+      const env = { ...process.env, BRAINSTORM_PORT: String(busyPort), BRAINSTORM_DIR: dir };
+      delete env.BRAINSTORM_TOKEN;
+      const fallback = spawn('node', [SERVER_PATH], { env });
+      let out = '';
+      fallback.stdout.on('data', (data) => { out += data.toString(); });
+      try {
+        await waitFor(() => out.includes('server-started'), 'fallback server did not start');
+        await sleep(300);
+        const announcements = out.split('\n').filter(line => line.includes('"server-started"')).length;
+        assert.strictEqual(announcements, 1, `server-started printed ${announcements} times:\n${out}`);
+        assert(!out.includes(`"port":${busyPort},`), 'should not report the busy port');
+      } finally {
+        fallback.kill();
+        blocker.close();
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
     });
 
     // ========== Summary ==========
