@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# SessionEnd hook for superpowers: stop the brainstorm servers this Claude
+# Code process started (start-server.sh registers each session directory
+# under its owner's PID). Prints nothing; always exits 0.
+cat > /dev/null 2>&1 || true
+
+case "$0" in
+  */*|*\\*) SCRIPT_DIR="${0%[/\\]*}" ;;
+  *) SCRIPT_DIR="." ;;
+esac
+STOP="${SCRIPT_DIR}/../skills/brainstorming/scripts/stop-server.sh"
+
+# Claude Code passes its PID to hooks; otherwise find the nearest ancestor
+# process named claude.
+owner="${CLAUDE_PID:-}"
+if [[ -z "$owner" ]]; then
+  pid="$PPID"
+  for _ in 1 2 3 4 5 6; do
+    [[ -r "/proc/$pid/comm" ]] || break
+    if [[ "$(< "/proc/$pid/comm")" == claude ]]; then owner="$pid"; break; fi
+    pid="$(awk '{print $4}' "/proc/$pid/stat" 2>/dev/null)"
+    [[ -n "$pid" && "$pid" != 0 ]] || break
+  done
+fi
+[[ "$owner" =~ ^[0-9]+$ ]] || exit 0
+
+file="${XDG_RUNTIME_DIR:-/tmp}/superpowers-brainstorm-$(id -u)/$owner"
+[[ -f "$file" ]] || exit 0
+while IFS= read -r dir; do
+  [[ -n "$dir" ]] && bash "$STOP" "$dir" >/dev/null 2>&1
+done < "$file"
+rm -f "$file"
+exit 0
