@@ -24,18 +24,19 @@ TEST_PATTERN="${TEST_PATTERN#./}"
 # find -path can't match '**/' against zero directory levels, so a pattern
 # like src/**/*.test.ts would skip src/top.test.ts; also try the pattern
 # with '**/' collapsed to cover files directly under the base directory.
-TEST_FILES=$(find . \( -path "./$TEST_PATTERN" -o -path "./${TEST_PATTERN//\*\*\//}" \) | sort -u)
-if [ -z "$TEST_FILES" ]; then
-  TOTAL=0
-else
-  TOTAL=$(printf '%s\n' "$TEST_FILES" | wc -l | tr -d ' ')
-fi
+# One path per array element, NUL-delimited, so paths with spaces, glob
+# characters or even newlines stay whole and are never expanded.
+TEST_FILES=()
+while IFS= read -r -d '' TEST_FILE; do
+  TEST_FILES+=("$TEST_FILE")
+done < <(find . \( -path "./$TEST_PATTERN" -o -path "./${TEST_PATTERN//\*\*\//}" \) -print0 | sort -zu)
+TOTAL=${#TEST_FILES[@]}
 
 echo "Found $TOTAL test files"
 echo ""
 
 COUNT=0
-for TEST_FILE in $TEST_FILES; do
+for TEST_FILE in ${TEST_FILES[@]+"${TEST_FILES[@]}"}; do
   COUNT=$((COUNT + 1))
 
   # Skip if pollution already exists

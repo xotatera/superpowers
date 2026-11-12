@@ -82,6 +82,62 @@ OUTPUT="$(run_polluter 'nomatch/**/*.test.ts')"
 assert_contains "$OUTPUT" "Found 0 test files" "empty result counts as 0, not 1"
 assert_contains "$OUTPUT" "No polluter found" "empty result exits via the clean path"
 
+echo "Test: a test path with a space is run as one path"
+setup_project
+rm -f "$PROJECT/src/top.test.ts" "$PROJECT/src/feature/nested.test.ts"
+mkdir -p "$PROJECT/src/with space"
+echo "test('spaced')" > "$PROJECT/src/with space/a b.test.ts"
+cat > "$PROJECT/bin/npm" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$2" >> npm-args.log
+touch pollution.marker
+EOF
+chmod +x "$PROJECT/bin/npm"
+OUTPUT="$(run_polluter 'src/**/*.test.ts')"
+assert_contains "$OUTPUT" "Testing: ./src/with space/a b.test.ts" "the whole spaced path is reported as one test"
+FIRST_ARG="$(head -n 1 "$PROJECT/npm-args.log" 2>/dev/null || true)"
+if [ "$FIRST_ARG" = "./src/with space/a b.test.ts" ]; then
+  pass "npm test receives the whole spaced path as one argument"
+else
+  fail "npm test receives the whole spaced path as one argument (got: '$FIRST_ARG')"
+fi
+
+echo "Test: a test path with a glob character is not expanded"
+setup_project
+rm -f "$PROJECT/src/top.test.ts" "$PROJECT/src/feature/nested.test.ts"
+echo "test('star')" > "$PROJECT/src/g*.test.ts"
+echo "test('plain')" > "$PROJECT/src/gx.test.ts"
+cat > "$PROJECT/bin/npm" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$2" >> npm-args.log
+EOF
+chmod +x "$PROJECT/bin/npm"
+run_polluter 'src/*.test.ts' > /dev/null
+RUNS="$(sort "$PROJECT/npm-args.log" 2>/dev/null | tr '\n' '|')"
+if [ "$RUNS" = "./src/g*.test.ts|./src/gx.test.ts|" ]; then
+  pass "each test file runs exactly once, by its own name"
+else
+  fail "each test file runs exactly once, by its own name (got: '$RUNS')"
+fi
+
+echo "Test: a test path with a newline is run as one path"
+setup_project
+rm -f "$PROJECT/src/top.test.ts" "$PROJECT/src/feature/nested.test.ts"
+NL_FILE="$PROJECT/src/nl"$'\n'"name.test.ts"
+echo "test('newline')" > "$NL_FILE"
+cat > "$PROJECT/bin/npm" <<'EOF'
+#!/usr/bin/env bash
+if [ -f "$2" ]; then echo found >> npm-args.log; else echo missing >> npm-args.log; fi
+EOF
+chmod +x "$PROJECT/bin/npm"
+OUTPUT="$(run_polluter 'src/*.test.ts')"
+assert_contains "$OUTPUT" "Found 1 test files" "a newline in a name does not split it into two entries"
+if [ "$(cat "$PROJECT/npm-args.log" 2>/dev/null)" = "found" ]; then
+  pass "npm test receives the newline path as one existing file"
+else
+  fail "npm test receives the newline path as one existing file (got: '$(cat "$PROJECT/npm-args.log" 2>/dev/null | tr '\n' ' ')')"
+fi
+
 echo ""
 if [ "$FAILURES" -gt 0 ]; then
   echo "$FAILURES test(s) failed"
