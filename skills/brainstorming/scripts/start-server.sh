@@ -127,7 +127,13 @@ if [[ -n "$PROJECT_DIR" ]]; then
   export BRAINSTORM_PORT_FILE="${PROJECT_DIR}/.superpowers/brainstorm/.last-port"
   export BRAINSTORM_TOKEN_FILE="${PROJECT_DIR}/.superpowers/brainstorm/.last-token"
 else
-  SESSION_DIR="/tmp/brainstorm-${SESSION_ID}"
+  # mktemp creates a new, owner-only directory with an unguessable name and
+  # fails rather than reuse one: a predictable /tmp name could be created
+  # first by another local account, with a planted state/server.pid in it.
+  if ! SESSION_DIR="$(mktemp -d /tmp/brainstorm-XXXXXXXXXX)"; then
+    echo "{\"error\": \"Cannot create a session directory under /tmp\"}"
+    exit 1
+  fi
 fi
 
 STATE_DIR="${SESSION_DIR}/state"
@@ -147,13 +153,6 @@ if ! [[ "$SERVER_ID" =~ ^[A-Za-z0-9_-]{32,64}$ ]]; then
 fi
 printf '%s\n' "$SERVER_ID" > "$SERVER_ID_FILE"
 chmod 600 "$SERVER_ID_FILE" 2>/dev/null || true
-
-# Kill any existing server
-if [[ -f "$PID_FILE" ]]; then
-  old_pid=$(cat "$PID_FILE")
-  kill "$old_pid" 2>/dev/null
-  rm -f "$PID_FILE"
-fi
 
 cd "$SCRIPT_DIR" || exit 1
 
