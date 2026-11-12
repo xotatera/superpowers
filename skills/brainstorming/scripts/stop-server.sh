@@ -17,6 +17,20 @@ STATE_DIR="${SESSION_DIR}/state"
 PID_FILE="${STATE_DIR}/server.pid"
 SERVER_ID_FILE="${STATE_DIR}/server-instance-id"
 
+# Drop this session directory from the SessionEnd registry (start-server.sh).
+unregister_session() {
+  local registry
+  registry="${XDG_RUNTIME_DIR:-/tmp}/superpowers-brainstorm-$(id -u)"
+  local file
+  for file in "$registry"/*; do
+    [[ -f "$file" ]] || continue
+    grep -qxF "$SESSION_DIR" "$file" || continue
+    grep -vxF "$SESSION_DIR" "$file" > "$file.tmp" || true
+    mv -f "$file.tmp" "$file"
+    [[ -s "$file" ]] || rm -f "$file"
+  done
+}
+
 mark_stopped() {
   local reason="$1"
   rm -f "${STATE_DIR}/server-info"
@@ -78,6 +92,7 @@ if [[ -f "$PID_FILE" ]]; then
   if ! is_brainstorm_server "$pid"; then
     rm -f "$PID_FILE" "$SERVER_ID_FILE"
     mark_stopped "stale_pid"
+    unregister_session
     echo '{"status": "stale_pid"}'
     exit 0
   fi
@@ -110,6 +125,7 @@ if [[ -f "$PID_FILE" ]]; then
   # an ephemeral /tmp one is removed whole below.
   rm -f "$PID_FILE" "$SERVER_ID_FILE"
   mark_stopped "stop-server.sh"
+  unregister_session
 
   # Only delete ephemeral /tmp directories
   if [[ "$SESSION_DIR" == /tmp/* ]]; then

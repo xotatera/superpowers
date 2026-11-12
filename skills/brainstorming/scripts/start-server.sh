@@ -192,11 +192,27 @@ if is_windows_like_shell; then
   OWNER_PID=""
 fi
 
+# Record this session directory under the owner's PID, so the plugin's
+# SessionEnd hook can stop the server when that Claude Code session ends
+# (hooks/session-end). Skipped without an owner or with a registry directory
+# this user does not own.
+register_session() {
+  [[ -n "$OWNER_PID" ]] || return 0
+  local registry
+  registry="${XDG_RUNTIME_DIR:-/tmp}/superpowers-brainstorm-$(id -u)"
+  mkdir -p "$registry" 2>/dev/null || return 0
+  [[ -O "$registry" ]] || return 0
+  chmod 700 "$registry" 2>/dev/null || true
+  printf '%s\n' "$SESSION_DIR" >> "$registry/$OWNER_PID"
+  chmod 600 "$registry/$OWNER_PID" 2>/dev/null || true
+}
+
 # Foreground mode for environments that reap detached/background processes.
 if [[ "$FOREGROUND" == "true" ]]; then
   env BRAINSTORM_DIR="$SESSION_DIR" BRAINSTORM_HOST="$BIND_HOST" BRAINSTORM_URL_HOST="$URL_HOST" BRAINSTORM_OWNER_PID="$OWNER_PID" node server.cjs "--brainstorm-server-id=$SERVER_ID" &
   SERVER_PID=$!
   echo "$SERVER_PID" > "$PID_FILE"
+  register_session
   wait "$SERVER_PID"
   exit $?
 fi
@@ -225,6 +241,7 @@ for _ in {1..50}; do
       echo "{\"error\": \"Server started but was killed. Retry in a persistent terminal with: $(json_escape "$retry")\"}"
       exit 1
     fi
+    register_session
     grep "server-started" "$LOG_FILE" | head -1
     exit 0
   fi

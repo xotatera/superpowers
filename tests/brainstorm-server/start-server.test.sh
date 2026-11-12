@@ -7,6 +7,11 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 START_SCRIPT="$REPO_ROOT/skills/brainstorming/scripts/start-server.sh"
 
 TEST_DIR="${TMPDIR:-/tmp}/brainstorm-start-test-$$"
+# start-server.sh records sessions under XDG_RUNTIME_DIR for the SessionEnd
+# hook; keep the test's records out of the real one.
+export XDG_RUNTIME_DIR="$TEST_DIR/run"
+mkdir -p "$XDG_RUNTIME_DIR"
+chmod 700 "$XDG_RUNTIME_DIR"
 passed=0
 failed=0
 

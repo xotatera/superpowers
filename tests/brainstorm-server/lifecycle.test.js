@@ -84,6 +84,14 @@ function isWindowsLikeShell() {
     !!process.env.MSYSTEM;
 }
 
+// start-server.sh records each session under XDG_RUNTIME_DIR for the
+// SessionEnd hook; keep the test's records out of the real one.
+function isolatedEnv(dir) {
+  const runtime = path.join(dir, 'run');
+  fs.mkdirSync(runtime, { recursive: true, mode: 0o700 });
+  return { ...process.env, XDG_RUNTIME_DIR: runtime };
+}
+
 async function waitForStartedOutput(child, timeoutMs = 5000) {
   let stdout = '';
   let stderr = '';
@@ -173,16 +181,16 @@ async function runTests() {
     let sessionDir = null;
     try {
       if (isWindowsLikeShell()) {
-        startProcess = spawn('bash', [START, '--project-dir', dir, '--idle-timeout-minutes', '5']);
+        startProcess = spawn('bash', [START, '--project-dir', dir, '--idle-timeout-minutes', '5'], { env: isolatedEnv(dir) });
         info = firstServerStarted(await waitForStartedOutput(startProcess));
       } else {
-        const out = execFileSync('bash', [START, '--project-dir', dir, '--idle-timeout-minutes', '5', '--background'], { encoding: 'utf8' });
+        const out = execFileSync('bash', [START, '--project-dir', dir, '--idle-timeout-minutes', '5', '--background'], { encoding: 'utf8', env: isolatedEnv(dir) });
         info = firstServerStarted(out);
       }
       sessionDir = newestSessionDir(dir);
       assert.strictEqual(info.idle_timeout_ms, 5 * 60 * 1000, '5 minutes -> 300000 ms');
     } finally {
-      if (sessionDir) execFileSync('bash', [STOP, sessionDir], { stdio: 'ignore' });
+      if (sessionDir) execFileSync('bash', [STOP, sessionDir], { stdio: 'ignore', env: isolatedEnv(dir) });
       if (startProcess && !await waitForExit(startProcess, 3000)) {
         await killAndWait(startProcess);
       }
